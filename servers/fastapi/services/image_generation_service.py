@@ -22,6 +22,7 @@ from utils.get_env import (
     get_openai_compat_image_base_url_env,
     get_openai_compat_image_api_key_env,
     get_openai_compat_image_model_env,
+    get_openai_compat_image_size_env,
     is_parallel_image_generation_enabled,
 )
 from utils.get_env import get_pixabay_api_key_env
@@ -889,7 +890,7 @@ class ImageGenerationService:
             model=model,
             prompt=prompt,
             n=1,
-            size=os.getenv("OPENAI_COMPAT_IMAGE_SIZE") or "1024x1024",
+            size=get_openai_compat_image_size_env() or "1024x1024",
         )
 
         item = response.data[0]
