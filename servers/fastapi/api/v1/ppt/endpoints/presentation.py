@@ -89,6 +89,7 @@ from utils.outline_utils import (
 )
 from utils.outline_limits import normalize_outline_payload
 from utils.process_slides import (
+    image_target_sizes_from_template,
     process_slide_add_placeholder_assets,
     process_slide_and_fetch_assets,
 )
@@ -109,6 +110,7 @@ from models.presentation_layout import PresentationLayoutModel, SlideLayoutModel
 from templates.v2.schema import get_template_schema
 from templates.v2.content import (
     hydrate_repeated_top_level_groups,
+    infographic_markdown_to_plain_text,
     repeated_child_source_index,
 )
 from templates.v2.theme import template_theme_for_presentation
@@ -630,6 +632,12 @@ def _apply_template_content_to_element(
             if name in content_values:
                 has_value = True
                 value = content_values[name]
+            elif len(content_values) == 1:
+                for candidate in _template_content_name_candidates(name)[1:]:
+                    if candidate in content_values:
+                        has_value = True
+                        value = content_values[candidate]
+                        break
         else:
             if preferred_content_keys is None and name_occurrences is not None:
                 preferred_content_keys = _template_repeated_content_keys_for_name(
@@ -872,8 +880,8 @@ def _apply_template_infographic_content(
     data = value.get("data")
     if isinstance(data, dict):
         current_data = updated.get("data")
+        incoming_data = infographic_markdown_to_plain_text(data)
         if isinstance(current_data, dict):
-            incoming_data = copy.deepcopy(data)
             current_type = current_data.get("type")
             if isinstance(current_type, str):
                 incoming_data["type"] = current_type
@@ -882,7 +890,7 @@ def _apply_template_infographic_content(
                 **incoming_data,
             }
         else:
-            updated["data"] = copy.deepcopy(data)
+            updated["data"] = incoming_data
 
     colors = value.get("colors")
     if isinstance(colors, list) and colors:
@@ -2329,6 +2337,9 @@ async def stream_presentation(
             # This will mutate slide and add placeholder assets
             process_slide_add_placeholder_assets(slide)
             slide.ui = _apply_template_content_to_ui(slide.ui, slide.content)
+            image_target_sizes = image_target_sizes_from_template(
+                slide.ui, slide.content, _apply_template_content_to_ui
+            )
 
             # This will mutate slide - start task immediately so it runs in parallel with next slide LLM generation
             asset_warnings_by_slide[i] = []
@@ -2344,6 +2355,7 @@ async def stream_presentation(
                     icon_weight=icon_weight,
                     allow_image_fallback=True,
                     image_warnings=asset_warnings_by_slide[i],
+                    image_target_sizes=image_target_sizes,
                 )
             )
             async_assets_generation_tasks.append(asset_task)
@@ -2983,6 +2995,9 @@ async def generate_presentation_handler(
                         icon_weight=layout_model.icon_weight,
                         allow_image_fallback=True,
                         image_warnings=image_warnings,
+                        image_target_sizes=image_target_sizes_from_template(
+                            slide.ui, slide.content, _apply_template_content_to_ui
+                        ),
                     )
                 )
                 for offset, slide in enumerate(batch_slides)
